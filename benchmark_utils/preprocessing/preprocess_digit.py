@@ -77,9 +77,8 @@ if __name__ == "__main__":
         embeddings = list()
         with torch.no_grad():
             for images, _ in dataloader:
-                inputs = processor(images=[image for image in images], return_tensors="pt", padding=False)
+                inputs = processor(images=[image for image in images], return_tensors="pt")
                 inputs = {key: val.to(DEVICE) for key, val in inputs.items()}
-                import ipdb; ipdb.set_trace()
                 outputs = model.get_image_features(**inputs)
                 embeddings.append(outputs)
 
