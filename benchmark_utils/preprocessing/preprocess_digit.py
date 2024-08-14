@@ -13,14 +13,21 @@ from sklearn.decomposition import PCA
 import torch
 import torchvision
 from torchvision.datasets import MNIST, SVHN, USPS
+from transformers import CLIPModel, CLIPProcessor
 
 
 if __name__ == "__main__":
     DATASETS = ['MNIST', 'SVHN', 'USPS']
     RANDOM_STATE = 27
     BATCH_SIZE = 2048
-    N_COMPONENTS = 50
+    N_COMPONENTS = 100
     N_JOBS = os.cpu_count()
+    DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    # Load CLIP model and processor
+    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(DEVICE)
+    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    model.eval()
 
     preprocessed_data = dict()
     for dataset_name in DATASETS:
@@ -31,8 +38,7 @@ if __name__ == "__main__":
         if dataset_name == 'mnist':
             transform = torchvision.transforms.Compose([
                 torchvision.transforms.ToTensor(),
-                torchvision.transforms.Pad(2),
-                torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+                torchvision.transforms.Lambda(lambda x: x.repeat(3, 1, 1)),
             ])
             dataset = MNIST(
                 root='./data/MNIST',
@@ -41,23 +47,16 @@ if __name__ == "__main__":
                 transform=transform
             )
         elif dataset_name == 'svhn':
-            transform = torchvision.transforms.Compose([
-                torchvision.transforms.ToTensor(),
-                torchvision.transforms.Grayscale(),
-                torchvision.transforms.Normalize((0.1307,), (0.3081,)),
-            ])
             dataset = SVHN(
                 root='./data/SVHN',
                 download=True,
                 split='train',
-                transform=transform
+                transform=torchvision.transforms.ToTensor()
             )
         elif dataset_name == 'usps':
             transform = torchvision.transforms.Compose([
                 torchvision.transforms.ToTensor(),
-                torchvision.transforms.Pad(8),
-                torchvision.transforms.Grayscale(),
-                torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+                torchvision.transforms.Lambda(lambda x: x.repeat(3, 1, 1)),
             ])
             dataset = USPS(
                 root='./data/USPS',
@@ -68,7 +67,7 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Unknown dataset {dataset_name}")
 
-        # Vectorize the images
+        # Generate embeddings using CLIP
         dataloader = torch.utils.data.DataLoader(
             dataset,
             batch_size=BATCH_SIZE,
@@ -78,10 +77,14 @@ if __name__ == "__main__":
         embeddings = list()
         with torch.no_grad():
             for images, _ in dataloader:
-                embeddings.append(images)
+                inputs = processor(images=[image for image in images], return_tensors="pt", padding=False)
+                inputs = {key: val.to(DEVICE) for key, val in inputs.items()}
+                import ipdb; ipdb.set_trace()
+                outputs = model.get_image_features(**inputs)
+                embeddings.append(outputs)
+
         embeddings = torch.cat(embeddings, dim=0)
-        embeddings = embeddings.cpu().numpy()
-        embeddings = embeddings.reshape(embeddings.shape[0], -1)
+        embeddings = embeddings.cpu().numpy().astype(np.float64)
 
         # Save the preprocessed data
         preprocessed_data[dataset_name] = {
@@ -91,13 +94,12 @@ if __name__ == "__main__":
 
     # Apply PCA to reduce the dimensionality of the embeddings
     print("Applying PCA...")
-    full_X = torch.cat(
+    full_X = np.concatenate(
         [
-            torch.tensor(
-                preprocessed_data[dataset_name.lower()]['X']
-            ) for dataset_name in DATASETS
+            preprocessed_data[dataset_name.lower()]['X']
+            for dataset_name in DATASETS
         ],
-        dim=0
+        axis=0
     )
     pca = PCA(
         n_components=N_COMPONENTS,
