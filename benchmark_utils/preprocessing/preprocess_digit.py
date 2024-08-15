@@ -13,20 +13,20 @@ from sklearn.decomposition import PCA
 import torch
 import torchvision
 from torchvision.datasets import MNIST, SVHN, USPS
-from transformers import CLIPModel, CLIPProcessor
+from transformers import ViTImageProcessor, ViTModel
 
 
 if __name__ == "__main__":
     DATASETS = ['MNIST', 'SVHN', 'USPS']
     RANDOM_STATE = 27
-    BATCH_SIZE = 2048
+    BATCH_SIZE = 1024
     N_COMPONENTS = 100
     N_JOBS = os.cpu_count()
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     # Load CLIP model and processor
-    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(DEVICE)
-    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    processor = ViTImageProcessor.from_pretrained('google/vit-large-patch16-224-in21k')
+    model = ViTModel.from_pretrained('google/vit-large-patch16-224-in21k').to(DEVICE)
     model.eval()
 
     preprocessed_data = dict()
@@ -79,11 +79,12 @@ if __name__ == "__main__":
             for images, _ in dataloader:
                 inputs = processor(images=[image for image in images], return_tensors="pt")
                 inputs = {key: val.to(DEVICE) for key, val in inputs.items()}
-                outputs = model.get_image_features(**inputs)
-                embeddings.append(outputs)
+                outputs = model(**inputs).last_hidden_state[..., 0, :]  # cls token
+                embeddings.append(outputs.cpu().numpy().astype(np.float64))
 
-        embeddings = torch.cat(embeddings, dim=0)
-        embeddings = embeddings.cpu().numpy().astype(np.float64)
+                del inputs, outputs
+
+        embeddings = np.concatenate(embeddings, axis=0)
 
         # Save the preprocessed data
         preprocessed_data[dataset_name] = {
