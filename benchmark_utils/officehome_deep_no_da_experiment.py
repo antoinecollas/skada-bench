@@ -13,6 +13,8 @@ from datasets.officehome import Dataset
 from solvers.deep_no_da_source_only import Solver
 from objective import Objective
 
+from skorch.callbacks import LRScheduler
+
 import argparse
 
 cache_dir = Path('__cache__')
@@ -24,13 +26,14 @@ parser.add_argument('--debug', action='store_true', help='debug mode')
 args = parser.parse_args()
 debug = args.debug
 
-TASKS = ['art', 'clipart', 'product', 'realworld']
+# TASKS = ['art', 'clipart', 'product', 'realworld']
 
 results = dict()
 
-all_source_target_pairs = list(itertools.permutations(TASKS, 2))
-if debug:
-    all_source_target_pairs = all_source_target_pairs[:2]
+# all_source_target_pairs = list(itertools.permutations(TASKS, 2))
+# if debug:
+#     all_source_target_pairs = all_source_target_pairs[:2]
+all_source_target_pairs = [('clipart', 'product')]
 
 for source, target in all_source_target_pairs:
     print(f'{source} -> {target}')
@@ -46,11 +49,13 @@ for source, target in all_source_target_pairs:
     # Set the data in the objective
     objective.set_data(**data)
 
-    # Get a cross-validation fold
-    cv_fold = next(objective.cv.split(objective.X, objective.y, objective.sample_domain))
-    X_train, y_train, sample_domain_train, _ = objective.split(cv_fold, objective.X, objective.y, objective.sample_domain)
-    X_test, y_test = objective.X_test, objective.y_test
-    sample_domain_test = objective.sample_domain_test
+    # Get data
+    X_train = objective.X[objective.sample_domain > 0]
+    y_train = objective.y[objective.sample_domain > 0]
+    sample_domain_train = objective.sample_domain[objective.sample_domain > 0]
+    X_test = objective.X[objective.sample_domain < 0]
+    y_test = objective.y[objective.sample_domain < 0]
+    sample_domain_test = objective.sample_domain[objective.sample_domain < 0]
 
     # Debug mode
     FACTOR = 100
@@ -67,7 +72,10 @@ for source, target in all_source_target_pairs:
     estimator = solver.get_estimator(n_classes=n_classes, device=device, dataset_name=dataset_name)
     hp = {
         'max_epochs': 20,
-        'lr': 1,
+        'lr': 3e-4,
+        'optimizer': torch.optim.AdamW,
+        'optimizer__weight_decay': 0.0001,
+        'callbacks': [LRScheduler(policy='StepLR', step_size=10, gamma=0.1)]
     }
     estimator = estimator.set_params(**hp)
 

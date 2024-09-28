@@ -49,7 +49,7 @@ def objective_optuna(trial):
     # Hyperparameter search space
     optimizer = torch.optim.SGD
     lr = trial.suggest_float('lr', 1e-4, 1, log=True)
-    max_epochs = trial.suggest_int('max_epochs', 10, 50)
+    max_epochs = 20
     scheduler_step = trial.suggest_int('scheduler_step', 1, max_epochs)
     scheduler_gamma = trial.suggest_float('scheduler_gamma', 0.1, 0.99)
     optimizer_momentum = trial.suggest_float('optimizer_momentum', 0, 0.99)
